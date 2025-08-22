@@ -7,4 +7,4 @@ Then you can use it:
 ```
 using PlotMGA
 ```
-Example usage can be found in the `example/` folder. Note that you will need to supply your own SpineOpt Database.
+Example usage can be found in the `example/` folder. Note that this branch uses an LFS git extension for db storage.
