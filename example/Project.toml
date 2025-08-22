@@ -1,0 +1,4 @@
+[deps]
+PlotMGA = "76d04dbd-c4c6-4f69-b5ce-df64e332f103"
+SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
