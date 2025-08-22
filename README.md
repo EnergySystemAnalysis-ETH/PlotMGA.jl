@@ -7,4 +7,4 @@ Then you can use it:
 ```
 using PlotMGA
 ```
-Example usage can be found in the `example/` folder.
+Example usage can be found in the `example/` folder. Note that you will need to supply your own SpineOpt Database.
