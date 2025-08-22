@@ -5,5 +5,5 @@ module PlotMGA
     export plot_all_mga_profiles
     export plot_technology_interactions
     export plot_technology_effects
-    export EnergyUnit
+    export EnergyUnit, MWh, GWh
 end
