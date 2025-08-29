@@ -193,11 +193,11 @@ struct ProfileType
 end
 
 struct CombinedProfileTypes
-    names::Vector{String}
+    name::String
     df_predicates::Vector{Pair}
 
     CombinedProfileTypes(types::Vector{ProfileType}) = new(
-        getfield.(types, :df_predicate), getfield.(types, :name)
+        join(getfield.(types, :name), " "), getfield.(types, :df_predicate)
     )
 end
 
@@ -206,7 +206,7 @@ end
 
 Produces all combinations of flow profile types from multiple lists.
 """
-combine_profiles(profile_types::Vector{ProfileType}...) = map(CombinedProfileTypes, product(profile_types...))
+combine_profiles(profile_types::Vector{ProfileType}...) = product(profile_types...) .|> collect .|> CombinedProfileTypes
 
 """
     annotate_df_by_profiles(df, combined_profiles::Vector{CombinedProfileTypes})
@@ -219,7 +219,7 @@ Entries fulfilling multiple combinations will be multiplied.
 """
 annotate_df_by_profiles(df, combined_profiles::Vector{CombinedProfileTypes}) = vcat(
         (
-            subset(df, profile.df_predicates...) |> Fix2(insertcols, :type=>profile.names)
+            subset(df, profile.df_predicates...) |> Fix2(insertcols, :type=>profile.name)
             for profile in combined_profiles
         )...
 ) 
@@ -264,13 +264,12 @@ function plot_all_mga_profiles(
         df, unit::EnergyUnit, profile_types::Vector{ProfileType}...;
         fig_prefix::String="", display_plot::Bool=true, save_plot::Bool=true
     )
-    combined_profiles = combine_profiles(profile_types...)
+    combined_profiles = combine_profiles(profile_types...) |> vec
     annotated_df = annotate_df_by_profiles(df, combined_profiles)
     for ((;type), subdf) in by_pairs(annotated_df, :type)
-        combined_type_name = join(type, " ")
         plot_mga_alternative_profiles(
             subdf, unit,
-            fig_prefix="$(fig_prefix)$(combined_type_name)_", display_plot=display_plot, save_plot=save_plot
+            fig_prefix="$(fig_prefix)$(type)_", display_plot=display_plot, save_plot=save_plot
         )  
     end
 end
