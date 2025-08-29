@@ -6,4 +6,5 @@ module PlotMGA
     export plot_technology_interactions
     export plot_technology_effects
     export EnergyUnit, MWh, GWh
+    export process
 end
