@@ -134,7 +134,7 @@ function annotate_optimal_solutions(df)
     vcat(nonoptimal, optimal)
 end
 
-function connect_technology_with_costs(df, effects_df)
+function connect_technology_with_effects(df, effects_df)
     df = squash_groups(df, [:mga_iteration, :alternative, :technology], :total_value)
     df = innerjoin(df, effects_df, on=[:mga_iteration, :alternative], renamecols=""=>"_effects")
     df = annotate_optimal_solutions(df)
@@ -142,7 +142,7 @@ function connect_technology_with_costs(df, effects_df)
 end
 
 function obtain_technology_interactions(df, effects_df)
-    df = connect_technology_with_costs(df, effects_df)
+    df = connect_technology_with_effects(df, effects_df)
     df = outerjoin(df, df, on=[:mga_iteration, :alternative, :total_value_effects], renamecols= "_1st" => "_2nd")
     df
 end
@@ -188,10 +188,10 @@ function plot_technology_effects_by_alternative(df, plot)
 end
 
 function plot_technology_effects(
-        tech_df, costs_df;
+        tech_df, effects_df;
         fig_prefix::String="", display_plot::Bool=true, save_plot::Bool=true
     )
-    df = connect_technology_with_costs(tech_df, costs_df)
+    df = connect_technology_with_effects(tech_df, effects_df)
     for ((;technology), subdf) in by_pairs(df, :technology)
         p = plot(xlabel="Installation", ylabel="Total system costs [\$]")
         plot_technology_effects_by_alternative(subdf, p)
