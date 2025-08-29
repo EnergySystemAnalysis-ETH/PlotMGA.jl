@@ -1,10 +1,3 @@
-#TODO: Make sure that the RPM marker is always on top
-#TODO: to script with cli args
-#TODO: tech multiplication by capacities
-#TODO: tech different units (Wh vs W)
-
-
-
 using SQLite
 using DataFrames
 using JSON
@@ -168,6 +161,8 @@ function plot_technology_interactions_by_alternative(df, plot, alternative_marke
     end
 end
 
+#TODO: tech multiplication by capacities
+#TODO: tech different units (Wh vs W)
 function plot_technology_interactions(
         tech_df, effects_df, alternative_markers::AbstractDict;
         fig_prefix::String="", display_plot::Bool=true, save_plot::Bool=true
