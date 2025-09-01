@@ -45,11 +45,7 @@ function process_fn1(df)
     ...
     df
 end
-function process_fn2(df)
-    ...
-    df
-end
-process_spine_data(::Val{:new_type}) = process_fn1 ∘ process_fn2
+process_spine_data(::Val{:new_type}) = process_fn1
 ```
 ### Getting the data
 
