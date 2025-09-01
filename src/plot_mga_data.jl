@@ -99,7 +99,7 @@ end
         - `unit_flow`
     
     But you can easily extend it on the go by defining:
-    ```
+    ```julia
     function process_fn1(df)
         ...
         df
@@ -205,7 +205,7 @@ end
 Describes a single flow profile. The predicate greps all of the flows from a master flow df.
 
 # Example
-
+```julia
 type1 = ProfileType("Electricity", :destination=>ByRow(contains("Electricity")))
 
 type2 = ProfileType("Heat", :destination=>ByRow(contains("Space_Heating")))
@@ -213,6 +213,8 @@ type2 = ProfileType("Heat", :destination=>ByRow(contains("Space_Heating")))
 df_electricity = subset(master_df, type1.df_predicate)
 
 df_heat = subset(master_df, type2.df_predicate)
+```
+
 """
 struct ProfileType
     name::String
