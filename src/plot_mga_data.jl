@@ -6,7 +6,7 @@ import Base: Fix1, Fix2
 import Base.Iterators: product
 
 """
-    get_parameter_value(db, param_name)
+    get_spine_parameter_value(db, param_name)
 
 Get parameter value from a `db` in a SpineDB format.
 
@@ -15,7 +15,7 @@ Returns a df with columns:
 - `value` - parameter value
 - `details` - list of fields from the Spine's entity name (e.g., parameter name, mga iteration, technology)
 """
-function get_parameter_value(db, param_name)
+function get_spine_parameter_value(db, param_name)
     params = DBInterface.execute(db, """
         SELECT alternative.name AS alternative, value, entity.name AS details 
         FROM parameter_value 
@@ -88,27 +88,54 @@ function process_flows(params::DataFrame)
 end
 
 """
-    process(::Val{DB_ENTRY}) where {DB_ENTRY}
-
+    process_spine_data(::Val{DB_ENTRY}) where {DB_ENTRY}
+    
     Returns processing pipeline for the database entry.
+
+    It currently has a specific implementation for:
+        - `total_costs`
+        - `storages_invested`
+        - `units_invested`
+        - `unit_flow`
+    
+    But you can easily extend it on the go by defining:
+    ```
+    function process_fn1(df)
+        ...
+        df
+    end
+    function process_fn2(df)
+        ...
+        df
+    end
+    ```
+    process_spine_data(::Val{:new_type}) = process_fn1 ∘ process_fn2
+
+    Some of the predefined functions for processing include: 
+        - `sum_timeseries`
+        - `add_mga_iteration`
+        - `process_technology`
+        - `process_flows`
+
 """
-process(x) =                            add_mga_iteration ∘ sum_timeseries
-process(::Val{:storages_invested}) =    add_mga_iteration ∘ sum_timeseries ∘ process_technology
-process(::Val{:units_invested}) =       add_mga_iteration ∘ sum_timeseries ∘ process_technology
-process(::Val{:unit_flow}) =            add_mga_iteration ∘ sum_timeseries ∘ process_technology ∘ process_flows
+process_spine_data(x) =                             sum_timeseries
+process_spine_data(::Val{:total_costs}) =           add_mga_iteration ∘ sum_timeseries
+process_spine_data(::Val{:storages_invested}) =     add_mga_iteration ∘ sum_timeseries ∘ process_technology
+process_spine_data(::Val{:units_invested}) =        add_mga_iteration ∘ sum_timeseries ∘ process_technology
+process_spine_data(::Val{:unit_flow}) =             add_mga_iteration ∘ sum_timeseries ∘ process_technology ∘ process_flows
 
 sort_by_cols(df::DataFrame) = sort(df, names(df))
 
 """
-    get_param(db, param_name::Symbol[, col_order])
+    get_spine_parameter(db, param_name::Symbol[, col_order])
     
 Grabs the parameter from a SpineOpt's database and processess it according to the parameter name.
 
 The option parameter col_order specifies the only columns that should be in the output and their order.
 Those columns should be sortable.
 """
-get_param(db, param_name::Symbol) = get_parameter_value(db, param_name) |> process(Val(param_name))
-get_param(db, param_name::Symbol, col_order) = get_param(db, param_name) |> Fix2(select, col_order) |> sort_by_cols
+get_spine_parameter(db, param_name::Symbol) = get_spine_parameter_value(db, param_name) |> process_spine_data(Val(param_name))
+get_spine_parameter(db, param_name::Symbol, col_order) = get_spine_parameter(db, param_name) |> Fix2(select, col_order) |> sort_by_cols
 
 """
     EnergyUnit MWh=1 GWh=1000
