@@ -66,7 +66,7 @@ The MORPHE2US technology data should always comes as a second in `details`, with
 function process_technology(params::DataFrame)
     # MORPHE2US + Spine details are be in form (entry1,"TECHNOLOGY_NAME_(B|D)_LVL_INSTALLATION_SITE", ...)
     tech_data = get.(params.details, 2, nothing)
-    installation = tech_data .|> x -> match(r"(B|D)-LVL.*", x).match 
+	installation = tech_data .|> Fix1(match, r"(B|D)-LVL.*") .|> x -> isnothing(x) ? "Other" : x.match
     technology = replace.(tech_data, r"_\w-LVL.*" => "")
     insertcols(params, :installation=>installation, :technology=>technology)
 end
