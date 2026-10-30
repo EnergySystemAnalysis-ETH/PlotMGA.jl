@@ -2,6 +2,7 @@ using SQLite
 using DataFrames
 using JSON
 using StatsPlots
+using StatsPlots.Plots.PlotMeasures
 import Base: Fix1, Fix2
 import Base.Iterators: product
 
@@ -21,10 +22,13 @@ function get_spine_parameter_value(db, param_name)
         FROM parameter_value 
         JOIN entity ON parameter_value.entity_id = entity.id 
         JOIN alternative ON alternative.id = parameter_value.alternative_id 
-        WHERE parameter_definition_id = (SELECT id FROM parameter_definition WHERE name="$param_name");
+        WHERE parameter_definition_id in (SELECT id FROM parameter_definition WHERE name="$param_name");
     """) |> DataFrame
-    # parameter values in SpineDB are kept in a Dict("data"=>value, ...) encoded as a BSON
-    params.value = params.value .|> String .|> JSON.parse .|> (v -> v["data"])
+    json_parser(x) = x |> JSON.parse |> (v -> v["data"])
+    parser(x) = (y = tryparse(Float64, x)) !== nothing ? y : json_parser(x)
+    # parameter values in SpineDB are kept in a Dict("data"=>value, ...) or a float encoded as a BSON
+    # params.value = params.value .|> String .|> JSON.parse .|> (v -> v["data"])
+    params.value = params.value .|> String .|> parser
     # entity names are made up of fields delimited by "__"
     params.details = split.(params.details, "__")
     params
@@ -39,6 +43,26 @@ Each of the values should be a Dict with datetime as keys and floats as values.
 """
 function sum_timeseries(params::DataFrame)
     total_value = params.value .|> values .|> sum
+    insertcols(params, :total_value=>total_value)
+end
+
+"""
+    TODO
+"""
+function add_technology_tag(params::DataFrame)
+    technology_tag = params.details .|> x ->x[2] 
+    insertcols(params, :technology_tag=>technology_tag)
+end
+
+"""
+    TODO
+"""
+function increment_sum(values)
+    array = values .|> x -> x[2]
+    (array[2:end] - array[1:end-1] |> filter(>=(0)) |> sum) + array[1]
+end
+function increment_sum_timeseries(params::DataFrame)
+    total_value = params.value .|> y -> sort(collect(y), by = x->x[1]) |> increment_sum
     insertcols(params, :total_value=>total_value)
 end
 
@@ -69,6 +93,13 @@ function process_technology(params::DataFrame)
 	installation = tech_data .|> Fix1(match, r"(B|D)-LVL.*") .|> x -> isnothing(x) ? "Other" : x.match
     technology = replace.(tech_data, r"_\w-LVL.*" => "")
     insertcols(params, :installation=>installation, :technology=>technology)
+end
+
+function process_node_technology(params::DataFrame)
+    # MORPHE2US + Spine details are be in form (entry1,"TECHNOLOGY_NAME_(B|D)_LVL_INSTALLATION_SITE", ...)
+    tech_data = get.(params.details, 2, nothing)
+    technology = replace.(tech_data, r"_.*" => "")
+    insertcols(params, :technology=>technology)
 end
 
 """
@@ -118,11 +149,13 @@ end
         - `process_flows`
 
 """
-process_spine_data(x) =                             sum_timeseries
+process_spine_data(x) =                             identity
 process_spine_data(::Val{:total_costs}) =           add_mga_iteration ∘ sum_timeseries
-process_spine_data(::Val{:storages_invested}) =     add_mga_iteration ∘ sum_timeseries ∘ process_technology
-process_spine_data(::Val{:units_invested}) =        add_mga_iteration ∘ sum_timeseries ∘ process_technology
-process_spine_data(::Val{:unit_flow}) =             add_mga_iteration ∘ sum_timeseries ∘ process_technology ∘ process_flows
+process_spine_data(::Val{:storages_invested}) =     add_mga_iteration ∘ sum_timeseries ∘ process_technology ∘ add_technology_tag
+process_spine_data(::Val{:units_invested}) =        add_mga_iteration ∘ sum_timeseries ∘ process_technology ∘ add_technology_tag
+process_spine_data(::Val{:connections_invested}) =  add_mga_iteration ∘ sum_timeseries ∘ process_technology ∘ add_technology_tag
+process_spine_data(::Val{:unit_flow}) =             add_mga_iteration ∘ sum_timeseries ∘ process_technology ∘ add_technology_tag ∘ process_flows
+process_spine_data(::Val{:node_state}) =            add_mga_iteration ∘ increment_sum_timeseries ∘ process_node_technology ∘ add_technology_tag
 
 sort_by_cols(df::DataFrame) = sort(df, names(df))
 
@@ -183,16 +216,25 @@ function plot_mga_profile(
     df = squash_groups(df, [iteration_col, stackby], value_col) 
     df = change_col_units(df, unit, value_col)
     no_iterations = maximum(df[!, iteration_col])
-    mga_x_axis = (0:no_iterations, ["Optim."; 1:no_iterations]) # We want a special marker on optimal (iter=0)
+    mga_x_axis = vcat("Opt.", [iszero(i % 5) ? "$i" : "" for i in 1:no_iterations])
+    # mga_x_axis = (0:no_iterations, ["Opt."; 1:no_iterations]) # We want a special marker on optimal (iter=0)
+    techs = df[!, stackby] |> unique
+    colorstyles = [ (color, style)
+        for style in [nothing, :/, :|, :-, :+, :x] for color in palette(:tab10)
+    ][1:length(techs)] #TODO - won't work for >= 60 techs
+    colormap = Dict(tech => color for (tech, (color, style)) in zip(techs, colorstyles))
+    stylemap = Dict(tech => style for (tech, (color, style)) in zip(techs, colorstyles))
     groupedbar(
         df[!, iteration_col], 
         df[!, value_col], 
         group=df[!, stackby],
         bar_position=:stack,
         xlabel="MGA Iteration",
-        ylabel="Output [$unit]",
-        xticks=mga_x_axis,
-        legend=:bottomright
+        # ylabel="Output [$unit]",
+        xticks=(0:no_iterations, mga_x_axis),
+        legend=:bottomright,
+        fillstyle=get.(Ref(stylemap), df[!,stackby], missing),
+        fillcolor=get.(Ref(colormap), df[!,stackby], missing),
     )
 end
 
@@ -274,8 +316,10 @@ function plot_mga_alternative_profiles(
         )
     # We have to make sure that plots for every alternative are of the same height
     max_y = (plots |> values .|> ylims .|> x -> x[2]) |> maximum
-    for (alt, p) in plots
-        plot!(p, ylim=(0, max_y))
+    for alt in sort(collect(keys(plots))) #TODO delete
+        p = plots[alt]
+    # for (alt, p) in plots
+        plot!(p, ylim=(0, max_y), legend=:outerright, margins=5mm)
         save_plot && savefig("$(fig_prefix)$alt.png")
         display_plot && display(p)
     end
@@ -363,9 +407,14 @@ function plot_technology_interactions_by_alternative(
             subdf[!, x_technology_col],
             subdf[!, y_technology_col],
             zcolor=subdf[!, effect_col],
+            seriescolor=:roma,
+            markersize=6,
+            # markerstrokewidth=2,
             seriestype=:scatter,
             marker=alternative_markers[alternative],
-            label=alternative
+            label=alternative,
+            legend = false, 
+            colorbar = true,
         )
     end
 end
@@ -391,7 +440,7 @@ function plot_technology_interactions(
     )
     df = obtain_technology_interactions(tech_df, effects_df)
     for ((;technology_1st, technology_2nd), subdf) in by_pairs(df, [:technology_1st, :technology_2nd])
-        p = plot(xlabel=technology_1st, ylabel=technology_2nd) #empty plot with technology names
+        p = plot(xlabel=technology_1st, ylabel=technology_2nd, margins=5mm) #empty plot with technology names
         plot_technology_interactions_by_alternative(subdf, p, alternative_markers)
         display_plot && display(p)
         save_plot && savefig("$(fig_prefix)$(technology_1st)_$(technology_2nd).png")
@@ -407,7 +456,7 @@ end
 Modifies the passed plot by adding point corresponding to the technology and its effects in every alternative.
 """
 function plot_technology_effects_by_alternative(
-        df, plot;
+        df, plot, alternative_markers::Union{AbstractDict, Nothing}=nothing;
         technology_col::Symbol=:total_value, effect_col::Symbol=:total_value_effects
     )
     for ((;alternative), subdf) in by_pairs(df, :alternative)
@@ -415,7 +464,12 @@ function plot_technology_effects_by_alternative(
             plot,
             subdf[!, technology_col],
             subdf[!, effect_col],
-            label=alternative
+            label=alternative,
+            marker=isnothing(alternative_markers) ? nothing :  alternative_markers[alternative],
+            legend = false, 
+            colorbar = true,
+            markersize=6,
+            # palette=cgrad(:roma, scale = :log)
         )
     end 
 end
@@ -431,13 +485,14 @@ Creates a plot for every technology and show effects of its installation on the 
 If the figures are to be saved `fig_prefix` is added to the filename.
 """
 function plot_technology_effects(
-        tech_df, effects_df;
+        tech_df, effects_df, alternative_markers::Union{AbstractDict, Nothing}=nothing;
         fig_prefix::String="", display_plot::Bool=true, save_plot::Bool=true
     )
     df = connect_technology_with_effects(tech_df, effects_df)
     for ((;technology), subdf) in by_pairs(df, :technology)
-        p = plot(xlabel="Installation", ylabel="Total system costs [\$]") # empty plot
-        plot_technology_effects_by_alternative(subdf, p)
+        # p = plot(xlabel="Capacity", ylabel="Total system costs [\$]", margins=5mm) # empty plot
+        p = plot(margins=5mm) 
+        plot_technology_effects_by_alternative(subdf, p, alternative_markers)
         display_plot && display(p)
         save_plot && savefig("$(fig_prefix)$technology.png")
     end
